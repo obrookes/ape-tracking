@@ -7,7 +7,7 @@
 
 ## Usage
 
-A quick start script for training on CPU is provided below:
+A quick start script is provided below:
 
 ```bash
 python track.py --results_file=results.pkl # output of torch model
