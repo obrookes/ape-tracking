@@ -5,14 +5,13 @@ import json
 import imageio
 import torch
 import argparse
+import tqdm
 
 import numpy as np
 import pandas as pd
 
 from scipy.optimize import linear_sum_assignment
 from cython_bbox import bbox_overlaps as bbox_ious
-
-
 
 def format_results(results_file):
 
@@ -309,18 +308,27 @@ def parse_args():
 
 
 def main():
+ 
     args = parse_args()
 
     formatted_results = format_results(args.results_file)
-    video_detections = get_video_results(formatted_results, args.video)
-    tracklets = track(detections=video_detections, 
-            conf_thresh=args.confidence,
-            distance_matrix=args.distance_matrix
-        )
-    id_tracklets = assign_id2tracklets(tracklets=tracklets, length_thresh=args.length)
+    
+    if(os.path.isdir(args.video)):
+        videos = [x.rstrip('.mp4') for x in os.listdir(args.video)]
+    else:
+        videos = [args.video]
+    
+    for video in tqdm.tqdm(videos):
 
-    if(args.write):
-        stitch_to_video(video=args.video, dets=id_tracklets)
+        video_detections = get_video_results(formatted_results, video)
+        tracklets = track(detections=video_detections, 
+                conf_thresh=args.confidence,
+                distance_matrix=args.distance_matrix
+            )
+        id_tracklets = assign_id2tracklets(tracklets=tracklets, length_thresh=args.length)
+
+        if(args.write):
+            stitch_to_video(video=video, dets=id_tracklets)
 
 if __name__ == '__main__':
     main()
