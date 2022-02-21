@@ -81,6 +81,16 @@ def ious_distance(atlbrs,btlbrs):
 
 # Tracking
 
+def get_confidences(detections, conf_thresh):
+    confidence = []
+    for i, frame in enumerate(detections):
+        conf = []
+        for f in frame:
+            if(f[-1] > conf_thresh):
+                conf.append(f[-1])
+        confidence.append(conf)
+    return confidence
+
 def track(detections, conf_thresh, distance_matrix, height=404, width=720): 
     
     # Tracking loop
@@ -102,7 +112,7 @@ def track(detections, conf_thresh, distance_matrix, height=404, width=720):
             boxes = boxes / np.array(
                 [width, height, width, height]
             )
-
+        
         prev_indices = []
         boxes_indices = []
                 
@@ -119,7 +129,7 @@ def track(detections, conf_thresh, distance_matrix, height=404, width=720):
             
             # Bipartite matching
             prev_indices, boxes_indices = linear_sum_assignment(cost)
-            
+
         # Add matches to active tracklets
         for prev_idx, box_idx in zip(prev_indices, boxes_indices):
             active_tracklets[prev_idx]["boxes"].append(
@@ -198,6 +208,32 @@ def assign_id2tracklets(tracklets, length_thresh):
 
     return dets_id
 
+# Post processing
+
+def process_tracklets(tracklets, confidence, video_name):
+    
+    annotation = {}
+    annotation['video'] = video_name
+    annotation['annotations'] = []
+
+    for k, v in tracklets.items():
+
+        entry = {}
+        entry['frame_id'] = k
+        entry['detections'] = []
+        
+        c = confidence[k]
+
+        for i, det in enumerate(v):
+            d = {}
+            d['ape_id'] = det[0]
+            d['bbox'] = list(normalised_xyxy_to_xyxy(det[1], (720,404)))
+            d['score'] = c[i]
+            entry['detections'].append(d)
+
+        annotation['annotations'].append(entry)
+    
+    return annotation
 # Bbox conversion 
 
 def normalised_xyxy_to_xyxy(bbox, dims=(720,404)):
@@ -299,14 +335,10 @@ def parse_args():
             help='specify which distance matric to use (i.e. euclidean or iou)')
     parser.add_argument('--length', type=int,
             help='tracklets less than this will be discarded')
-    parser.add_argument('--write', help='Write to video (i.e. True)')
- 
+    parser.add_argument('--write', type=int, help='Write to video (i.e. True)')
     args = parser.parse_args()
-
     return args
     
-
-
 def main():
  
     args = parse_args()
@@ -325,8 +357,14 @@ def main():
                 conf_thresh=args.confidence,
                 distance_matrix=args.distance_matrix
             )
-        id_tracklets = assign_id2tracklets(tracklets=tracklets, length_thresh=args.length)
+        
+        confidence = get_confidences(video_detections, args.confidence)
 
+        id_tracklets = assign_id2tracklets(tracklets=tracklets, length_thresh=args.length)
+        
+        # process_tracklets
+        final = process_tracklets(id_tracklets, confidence, video)
+        
         if(args.write):
             stitch_to_video(video=video, dets=id_tracklets)
 
