@@ -61,7 +61,7 @@ def make_video(results, frames):
                 img_array.append(img)
 
     out = cv2.VideoWriter(
-        f"video.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 24, size
+        f"{video_name}_tracked.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 24, size
     )
 
     for i in range(len(img_array)):
