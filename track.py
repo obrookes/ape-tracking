@@ -154,6 +154,35 @@ def track(detections, conf_thresh, distance_matrix, height=404, width=720):
     
     return tracklets
 
+def id2_tracklets(tracklets, length_thresh):
+    '''
+    Newest iteration of this function
+    '''
+
+    # Threshold tracklets by length
+    tracklets = [x for x in tracklets if len(x['boxes']) > length_thresh]
+    
+    for i, t in enumerate(tracklets):
+        t['ape_id'] = i
+        t['boxes'] = list(enumerate(t['boxes'], start=t['start']))
+    
+    # Sort tracklets by start frame
+    tracklets = sorted(tracklets, key=lambda x: x['start'], reverse=False) 
+    
+    dets = {}
+    
+    for track in tracklets:
+        ape_id = track['ape_id']
+        for box in track['boxes']:
+
+            entry = [(ape_id, box[1])]
+
+            if(box[0] not in dets.keys()):
+                dets[box[0]] = entry
+            else:
+                dets[box[0]].extend(entry)
+    print(dets) 
+    return dets
 
 def assign_id2tracklets(tracklets, length_thresh):
     
@@ -308,8 +337,7 @@ def stitch_to_video(video, dets):
                 bbox = normalised_xyxy_to_xyxy(bbox[1])
                 bbox = list(map(float, bbox))
                 xmin, ymin, xmax, ymax = bbox
-                
-                
+                 
                 cv2.rectangle(img, (int(xmin), int(ymin)), (int(xmax), int(ymax)), colours[ape_id], 2)
                 cv2.putText(img, f"ape: {ape_id}", (int(xmin), int(ymin)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colours[ape_id], 2)
                 
@@ -359,14 +387,17 @@ def main():
             )
         
         confidence = get_confidences(video_detections, args.confidence)
-
-        id_tracklets = assign_id2tracklets(tracklets=tracklets, length_thresh=args.length)
         
+        id_tracklets = id2_tracklets(tracklets=tracklets, length_thresh=args.length)
+
         # process_tracklets
         final = process_tracklets(id_tracklets, confidence, video)
         
         if(args.write):
             stitch_to_video(video=video, dets=id_tracklets)
+        
+        with open('result_file.pkl', 'wb') as handle:
+            pickle.dump(final, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()
