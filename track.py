@@ -180,8 +180,7 @@ def id2_tracklets(tracklets, length_thresh):
             if(box[0] not in dets.keys()):
                 dets[box[0]] = entry
             else:
-                dets[box[0]].extend(entry)
-    print(dets) 
+                dets[box[0]].extend(entry) 
     return dets
 
 def assign_id2tracklets(tracklets, length_thresh):
