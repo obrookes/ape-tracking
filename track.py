@@ -370,11 +370,14 @@ def process_tracklets(tracklets, confidence, video_name):
         entry = {}
         entry['frame_id'] = k
         entry['detections'] = []
+        
+        c = confidence[k-1]
 
         for i, det in enumerate(v):
             d = {}
             d['ape_id'] = det[0]
             d['bbox'] = list(det[1])
+            d['score'] = c[i]
             entry['detections'].append(d)
 
         annotation['annotations'].append(entry)
@@ -520,4 +523,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
