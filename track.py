@@ -10,6 +10,7 @@ import tqdm
 import numpy as np
 import pandas as pd
 
+from torchvision.ops import nms
 from scipy.optimize import linear_sum_assignment
 from cython_bbox import bbox_overlaps as bbox_ious
 
@@ -41,13 +42,32 @@ def get_video_results(df, video):
     '''
     Input: df - sorted DataFrame of all results
            video - name of the video for extraction
-    Outpur: dict with results for specified video
+    Output: dict with results for specified video
     '''
-
+    try:
+        video = video.split('/')[-1].split('.mp4')[0]
+    except:
+        video = video.split('.mp4')[0]
+    
     video_df = df[df.video==video]
     video_dict = video_df.to_dict()
     
     return [v[0][0] for k, v in video_dict['result'].items()]
+
+def apply_nms(detection, thresh):
+    dets = torch.tensor(detection)
+    scores = dets[:,-1:].squeeze(dim=1)
+    bboxes = dets[:,:-1]
+    idxs = nms(bboxes, scores, thresh)
+    return detection[idxs]
+
+def nms2frames(detections, thresh):
+    for i in range(len(detections)):
+        d = apply_nms(detections[i], thresh)
+        if(d.ndim != 2):
+            d = [d]
+        detections[i] = d     
+    return detections
 
 # IoU-based distance cost matrix
 
@@ -102,7 +122,7 @@ def track(detections, conf_thresh, distance_matrix, height=404, width=720):
         
         boxes = []
         conf = []
-        
+         
         for f in frame:
             if(f[-1] > conf_thresh):
                 boxes.append(f[:-1])
@@ -154,6 +174,34 @@ def track(detections, conf_thresh, distance_matrix, height=404, width=720):
     
     return tracklets
 
+def id2_tracklets(tracklets, length_thresh):
+    '''
+    Newest iteration of this function
+    '''
+
+    # Threshold tracklets by length
+    tracklets = [x for x in tracklets if len(x['boxes']) > length_thresh]
+    
+    for i, t in enumerate(tracklets):
+        t['ape_id'] = i
+        t['boxes'] = list(enumerate(t['boxes'], start=t['start']))
+    
+    # Sort tracklets by start frame
+    tracklets = sorted(tracklets, key=lambda x: x['start'], reverse=False) 
+    
+    dets = {}
+    
+    for track in tracklets:
+        ape_id = track['ape_id']
+        for box in track['boxes']:
+
+            entry = [(ape_id, box[1])]
+
+            if(box[0] not in dets.keys()):
+                dets[box[0]] = entry
+            else:
+                dets[box[0]].extend(entry) 
+    return dets
 
 def assign_id2tracklets(tracklets, length_thresh):
     
@@ -308,8 +356,7 @@ def stitch_to_video(video, dets):
                 bbox = normalised_xyxy_to_xyxy(bbox[1])
                 bbox = list(map(float, bbox))
                 xmin, ymin, xmax, ymax = bbox
-                
-                
+                 
                 cv2.rectangle(img, (int(xmin), int(ymin)), (int(xmax), int(ymax)), colours[ape_id], 2)
                 cv2.putText(img, f"ape: {ape_id}", (int(xmin), int(ymin)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colours[ape_id], 2)
                 
@@ -327,8 +374,8 @@ def stitch_to_video(video, dets):
 def parse_args():
 
     parser = argparse.ArgumentParser(description='Training')
-    parser.add_argument('--results_file',type=str, help='pickled results file')
-    parser.add_argument('--video', type=str, help='name of video to track')
+    parser.add_argument('--detection_path',type=str, help='path to pickled detection files')
+    parser.add_argument('--video_path', type=str, help='path to videos to track')
     parser.add_argument('--confidence', type=float, 
             help='confidence threshold for detections')
     parser.add_argument('--distance_matrix', type=str, 
@@ -342,31 +389,40 @@ def parse_args():
 def main():
  
     args = parse_args()
-
-    formatted_results = format_results(args.results_file)
     
-    if(os.path.isdir(args.video)):
-        videos = [x.rstrip('.mp4') for x in os.listdir(args.video)]
+    if(os.path.isdir(args.video_path)):
+        videos = [x.split('.mp4')[0] for x in os.listdir(args.video_path)]
     else:
-        videos = [args.video]
+        videos = [args.video.split('/')[-1].split('.mp4')[0]]
     
     for video in tqdm.tqdm(videos):
-
-        video_detections = get_video_results(formatted_results, video)
+        
+        print(f"Video: {video}")
+        results_file = f"{args.detection_path}/{video}.pkl"
+        formatted_results = format_results(results_file)
+ 
+        video_detections = get_video_results(formatted_results, f"{args.video_path}/{video}.mp4")        
+        video_detections = nms2frames(video_detections, 0.5) 
+        
         tracklets = track(detections=video_detections, 
                 conf_thresh=args.confidence,
                 distance_matrix=args.distance_matrix
             )
         
         confidence = get_confidences(video_detections, args.confidence)
-
-        id_tracklets = assign_id2tracklets(tracklets=tracklets, length_thresh=args.length)
         
+        id_tracklets = id2_tracklets(tracklets=tracklets, length_thresh=args.length)
+
         # process_tracklets
         final = process_tracklets(id_tracklets, confidence, video)
         
         if(args.write):
             stitch_to_video(video=video, dets=id_tracklets)
+        
+        outfile = f"tracks/{video.split('/')[-1].split('.mp4')[0]}.pkl"
+        
+        with open(outfile, 'wb') as handle:
+            pickle.dump(final, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     main()
