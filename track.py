@@ -192,7 +192,6 @@ def track_iou(detections, sigma_l, sigma_h, sigma_iou, t_min):
                 if _iou(track['bboxes'][-1], best_match['bbox']) >= sigma_iou:
                     track['bboxes'].append(best_match['bbox'])
                     track['max_score'] = max(track['max_score'], best_match['score'])
-                    print(track)
                     updated_tracks.append(track)
 
                     # remove from best matching detection from detections
@@ -297,8 +296,14 @@ def id2_tracklets(tracklets, length_thresh):
             if(box[0] not in dets.keys()):
                 dets[box[0]] = entry
             else:
-                dets[box[0]].extend(entry) 
-    return dets
+                dets[box[0]].extend(entry)
+    
+    # Sort dict by key / frame
+    new_dict = {}
+    for key in sorted(dets.keys()):
+        new_dict[key] = dets[key]
+    
+    return new_dict
 
 def assign_id2tracklets(tracklets, length_thresh):
     
@@ -362,18 +367,14 @@ def process_tracklets(tracklets, confidence, video_name):
     annotation['annotations'] = []
 
     for k, v in tracklets.items():
-        print(k, v)
         entry = {}
         entry['frame_id'] = k
         entry['detections'] = []
-        
-        c = confidence[k]
 
         for i, det in enumerate(v):
             d = {}
             d['ape_id'] = det[0]
-            d['bbox'] = list(normalised_xyxy_to_xyxy(det[1], (720,404)))
-            d['score'] = c[i]
+            d['bbox'] = list(det[1])
             entry['detections'].append(d)
 
         annotation['annotations'].append(entry)
@@ -501,11 +502,11 @@ def main():
         video_detections = nms2frames(video_detections, 0.5) 
         video_detections = mot2frames(video_detections)
          
-        tracklets = track_iou(video_detections, 0.25, 0.75, 0.5, 10)
+        tracklets = track_iou(video_detections, 0.25, 0.75, 0.75, 24)
         confidence = get_confidences(video_detections, args.confidence)
         
         id_tracklets = id2_tracklets(tracklets=tracklets, length_thresh=args.length)
-
+         
         # process_tracklets
         final = process_tracklets(id_tracklets, confidence, video)
         
@@ -519,3 +520,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
