@@ -374,8 +374,8 @@ def stitch_to_video(video, dets):
 def parse_args():
 
     parser = argparse.ArgumentParser(description='Training')
-    parser.add_argument('--results_file',type=str, help='pickled results file')
-    parser.add_argument('--video', type=str, help='name of video to track')
+    parser.add_argument('--detection_path',type=str, help='path to pickled detection files')
+    parser.add_argument('--video_path', type=str, help='path to videos to track')
     parser.add_argument('--confidence', type=float, 
             help='confidence threshold for detections')
     parser.add_argument('--distance_matrix', type=str, 
@@ -389,17 +389,19 @@ def parse_args():
 def main():
  
     args = parse_args()
-
-    formatted_results = format_results(args.results_file)
     
-    if(os.path.isdir(args.video)):
-        videos = [x.rstrip('.mp4') for x in os.listdir(args.video)]
+    if(os.path.isdir(args.video_path)):
+        videos = [x.split('.mp4')[0] for x in os.listdir(args.video_path)]
     else:
-        videos = [args.video]
+        videos = [args.video.split('/')[-1].split('.mp4')[0]]
     
     for video in tqdm.tqdm(videos):
         
-        video_detections = get_video_results(formatted_results, video)        
+        print(f"Video: {video}")
+        results_file = f"{args.detection_path}/{video}.pkl"
+        formatted_results = format_results(results_file)
+ 
+        video_detections = get_video_results(formatted_results, f"{args.video_path}/{video}.mp4")        
         video_detections = nms2frames(video_detections, 0.5) 
         
         tracklets = track(detections=video_detections, 
