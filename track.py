@@ -157,8 +157,8 @@ def get_confidences(detections, conf_thresh):
     for i, frame in enumerate(detections):
         conf = []
         for f in frame:
-            if(f[-1] > conf_thresh):
-                conf.append(f[-1])
+            if(f['score'] > conf_thresh):
+                conf.append(f['score'])
         confidence.append(conf)
     return confidence
 
@@ -192,7 +192,7 @@ def track_iou(detections, sigma_l, sigma_h, sigma_iou, t_min):
                 if _iou(track['bboxes'][-1], best_match['bbox']) >= sigma_iou:
                     track['bboxes'].append(best_match['bbox'])
                     track['max_score'] = max(track['max_score'], best_match['score'])
-
+                    print(track)
                     updated_tracks.append(track)
 
                     # remove from best matching detection from detections
@@ -282,23 +282,16 @@ def id2_tracklets(tracklets, length_thresh):
     '''
     Newest iteration of this function
     '''
-
-    # Threshold tracklets by length
-    tracklets = [x for x in tracklets if len(x['boxes']) > length_thresh]
-    
-    for i, t in enumerate(tracklets):
-        t['ape_id'] = i
-        t['boxes'] = list(enumerate(t['boxes'], start=t['start']))
-    
-    # Sort tracklets by start frame
-    tracklets = sorted(tracklets, key=lambda x: x['start'], reverse=False) 
-    
+    for ape_id, track in enumerate(tracklets):
+        track['boxes'] = list(enumerate(track['bboxes'], start=track['start_frame']))
+        track['ape_id'] = ape_id
+       
     dets = {}
     
     for track in tracklets:
         ape_id = track['ape_id']
+        
         for box in track['boxes']:
-
             entry = [(ape_id, box[1])]
 
             if(box[0] not in dets.keys()):
@@ -369,7 +362,7 @@ def process_tracklets(tracklets, confidence, video_name):
     annotation['annotations'] = []
 
     for k, v in tracklets.items():
-
+        print(k, v)
         entry = {}
         entry['frame_id'] = k
         entry['detections'] = []
@@ -509,14 +502,6 @@ def main():
         video_detections = mot2frames(video_detections)
          
         tracklets = track_iou(video_detections, 0.25, 0.75, 0.5, 10)
-
-        print(tracklets)
-        print(video)
-        tracklets = track(detections=video_detections, 
-                conf_thresh=args.confidence,
-                distance_matrix=args.distance_matrix
-            )
-        
         confidence = get_confidences(video_detections, args.confidence)
         
         id_tracklets = id2_tracklets(tracklets=tracklets, length_thresh=args.length)
