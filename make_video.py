@@ -29,24 +29,30 @@ def make_video(results, frames):
     for x in results:
         for d in x['detections']:
             apes.append(d['ape_id'])
-
+    
     ape_no = max(apes)
     colours = get_colour_list(ape_no)
     
     filelist = [os.path.join(frames, x) for x in os.listdir(f"{frames}")]
     no_of_frames = len(filelist)
 
-    for i in range(1, no_of_frames + 1):
+    for i in range(0, no_of_frames):
         
         filename = f"{frames}/{i}.jpg"
-        
-        for r in results:
-            if(r['frame_id']==i):
-                detections = r['detections']
 
-                img = cv2.imread(filename)
-                height, width, layers = img.shape
-                size = (width, height)
+        img = cv2.imread(filename)
+        height, width, layers = img.shape
+        size = (width, height)
+
+        is_detection = False
+
+        for r in results:
+            
+            if(r['frame_id']==i):
+
+                is_detection = True
+                
+                detections = r['detections']
 
                 # Get bndbxs for each detection
                 for i, det in enumerate(detections):
@@ -57,9 +63,12 @@ def make_video(results, frames):
                     
                     cv2.rectangle(img, (int(xmin), int(ymin)), (int(xmax), int(ymax)), colours[ape_id], 2)
                     cv2.putText(img, f"ape: {ape_id}", (int(xmin), int(ymin)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colours[ape_id], 2)
-                    
+                
                 img_array.append(img)
-
+        
+        if(is_detection==False):
+            img_array.append(img)
+   
     out = cv2.VideoWriter(
         f"{video_name}_tracked.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 24, size
     )
