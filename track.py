@@ -10,6 +10,7 @@ import tqdm
 import numpy as np
 import pandas as pd
 
+from torchvision.ops import nms
 from scipy.optimize import linear_sum_assignment
 from cython_bbox import bbox_overlaps as bbox_ious
 
@@ -41,13 +42,32 @@ def get_video_results(df, video):
     '''
     Input: df - sorted DataFrame of all results
            video - name of the video for extraction
-    Outpur: dict with results for specified video
+    Output: dict with results for specified video
     '''
-
+    try:
+        video = video.split('/')[-1].split('.mp4')[0]
+    except:
+        video = video.split('.mp4')[0]
+    
     video_df = df[df.video==video]
     video_dict = video_df.to_dict()
     
     return [v[0][0] for k, v in video_dict['result'].items()]
+
+def apply_nms(detection, thresh):
+    dets = torch.tensor(detection)
+    scores = dets[:,-1:].squeeze(dim=1)
+    bboxes = dets[:,:-1]
+    idxs = nms(bboxes, scores, thresh)
+    return detection[idxs]
+
+def nms2frames(detections, thresh):
+    for i in range(len(detections)):
+        d = apply_nms(detections[i], thresh)
+        if(d.ndim != 2):
+            d = [d]
+        detections[i] = d     
+    return detections
 
 # IoU-based distance cost matrix
 
@@ -102,7 +122,7 @@ def track(detections, conf_thresh, distance_matrix, height=404, width=720):
         
         boxes = []
         conf = []
-        
+         
         for f in frame:
             if(f[-1] > conf_thresh):
                 boxes.append(f[:-1])
@@ -378,8 +398,10 @@ def main():
         videos = [args.video]
     
     for video in tqdm.tqdm(videos):
-
-        video_detections = get_video_results(formatted_results, video)
+        
+        video_detections = get_video_results(formatted_results, video)        
+        video_detections = nms2frames(video_detections, 0.5) 
+        
         tracklets = track(detections=video_detections, 
                 conf_thresh=args.confidence,
                 distance_matrix=args.distance_matrix
@@ -395,7 +417,9 @@ def main():
         if(args.write):
             stitch_to_video(video=video, dets=id_tracklets)
         
-        with open('result_file.pkl', 'wb') as handle:
+        outfile = f"tracks/{video.split('/')[-1].split('.mp4')[0]}.pkl"
+        
+        with open(outfile, 'wb') as handle:
             pickle.dump(final, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
