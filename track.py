@@ -213,70 +213,6 @@ def track_iou(detections, sigma_l, sigma_h, sigma_iou, t_min):
 
     return tracks_finished
 
-
-def track(detections, conf_thresh, distance_matrix, height=404, width=720): 
-    
-    # Tracking loop
-    active_tracklets = []
-    finished_tracklets = []
-    prev_boxes = []
-    
-    for i, frame in enumerate(detections):
-        
-        boxes = []
-        conf = []
-
-        for f in frame:
-            if(f[-1] > conf_thresh):
-                boxes.append(f[:-1])
-                conf.append(f[-1])
-        
-        if(len(boxes) > 0):
-            boxes = boxes / np.array(
-                [width, height, width, height]
-            )
-        
-        prev_indices = []
-        boxes_indices = []
-                
-        if len(boxes) > 0 and len(prev_boxes) > 0:
-            
-            if(distance_matrix=='euclidean'):
-                # Pairwise cost: euclidean distance between boxes
-                cost = np.linalg.norm(prev_boxes[:, None] - boxes[None], axis=-1)
-            elif(distance_matrix=='iou'):
-                # Pairwise cost: IoU-based distance between boxes
-                cost = ious_distance(prev_boxes, boxes)
-            else:
-                raise ValueError('Unspecified distance matrix')
-            
-            # Bipartite matching
-            prev_indices, boxes_indices = linear_sum_assignment(cost)
-
-        # Add matches to active tracklets
-        for prev_idx, box_idx in zip(prev_indices, boxes_indices):
-            active_tracklets[prev_idx]["boxes"].append(
-                np.round(boxes[box_idx], 3).tolist()
-            )
-
-        # Finalize lost tracklets
-        lost_indices = set(range(len(active_tracklets))) - set(prev_indices)
-        for lost_idx in sorted(lost_indices, reverse=True):
-            finished_tracklets.append(active_tracklets.pop(lost_idx))
-        
-        # Activate new tracklets
-        new_indices = set(range(len(boxes))) - set(boxes_indices)
-        for new_idx in new_indices:
-            active_tracklets.append(
-                {"start": i, "boxes": [np.round(boxes[new_idx], 3).tolist()]}
-            )
-        # "Predict" next frame for comparison
-        prev_boxes = np.array([tracklet["boxes"][-1] for tracklet in active_tracklets])
-    
-    tracklets = active_tracklets + finished_tracklets
-    
-    return tracklets
-
 def id2_tracklets(tracklets, length_thresh):
     '''
     Newest iteration of this function
@@ -305,59 +241,6 @@ def id2_tracklets(tracklets, length_thresh):
     
     return new_dict
 
-def assign_id2tracklets(tracklets, length_thresh):
-    
-    # Get start index of each tracklet in tracklets
-    tracklet_starts = list(set([x['start'] for x in tracklets]))
-    tracklet_starts.sort(reverse=False)
-
-    tracklet_len = {}
-    
-    # For each start index
-    for start_idx in tracklet_starts:
-        idx_max = 0
-
-        # Find the longest tracklet
-        for tracklet in tracklets:
-            if(tracklet['start']==start_idx): 
-                if((len(tracklet['boxes']) >= length_thresh)):
-                    idx_max = len(tracklet['boxes'])
-                    if(start_idx not in tracklet_len.keys()):
-                        tracklet_len[start_idx] = [{
-                                # Store max length
-                                'len': idx_max,
-                                # Index each bbox with corresponding frame index
-                                'bboxes': list(enumerate(tracklet['boxes'], start=start_idx))
-                            }]
-                    else:
-                        tracklet_len[start_idx].append(
-                                {'len':idx_max,
-                                 'bboxes': list(enumerate(tracklet['boxes'], start=start_idx))
-                            })
-
-    dets = {}
-
-    _FRAME_INDEX = 0
-    _BBOX_INDEX = 1
-    
-    # For each tracklet
-    for k, v in tracklet_len.items():
-        for frame in v:
-            for d in frame['bboxes']:
-                # Store the bbox in dict with frame index as key
-                if(d[_FRAME_INDEX] not in dets.keys()):
-                    dets[d[_FRAME_INDEX]] = [d[_BBOX_INDEX]]
-                else:
-                    dets[d[_FRAME_INDEX]].append(d[_BBOX_INDEX])
-    
-    dets_id = {}
-    
-    # Attach ID to frames with multiple bboxes
-    for k, v in dets.items():
-        dets_id[k] = list(enumerate(v))
-
-    return dets_id
-
 # Post processing
 
 def process_tracklets(tracklets, confidence, video_name):
@@ -383,107 +266,22 @@ def process_tracklets(tracklets, confidence, video_name):
         annotation['annotations'].append(entry)
     
     return annotation
-# Bbox conversion 
-
-def normalised_xyxy_to_xyxy(bbox, dims=(720,404)):
-    """Normalised [x, y, w, h] from Megadetector to [x1, y1, x2, y2]"""
-    width = dims[0]
-    height = dims[1]
-    
-    x1 = bbox[0] * width
-    y1 = bbox[1] * height
-    
-    x2 = (bbox[2]) * width
-    y2 = (bbox[3]) * height
-        
-    return x1, y1, x2, y2
-
-# Video processing 
-
-def random_colour():
-    colour = [int(x) for x in np.random.choice(range(256), size=3)]
-    return tuple(colour)
-
-def get_colour_list(num):
-    colours = []
-    for i in range(0, num+1):
-        colours.append(random_colour())
-    return colours
-
-def get_no_frames(filelist):
-    video_name = filelist[0].split('_')[-0]
-    frames = len([f for f in filelist if f.endswith('.jpg')])
-    labels = len([l for l in filelist if l.endswith('.xml')])
-    if(frames == labels):
-        return frames
-    else:
-        print(f"Error: The number of frames and labels in {video_name} do not match!")
-
-def get_ape_no(dets):
-    ape_num = 0
-    for k, v in dets.items():
-        for x in v:
-            if(x[0] > ape_num):
-                ape_num = x[0]
-    return ape_num
-
-def stitch_to_video(video, dets):
-    
-    img_array = []
-
-    path = '/home/dl18206/Desktop/mres/summer_project/project/data/pan_african_dataset/data'
-    rgb = 'rgb'
-
-    ape_no = get_ape_no(dets)
-    colours = get_colour_list(ape_no)
-    
-    filelist = os.listdir(f"{path}/{rgb}/{video}")
-    no_of_frames = get_no_frames(filelist)
-
-    for i in range(1, no_of_frames):
-        
-        filename = f"{path}/{rgb}/{video}/{video}_frame_{i}.jpg"
-
-        img = cv2.imread(filename)
-        height, width, layers = img.shape
-        size = (width, height)
-        
-        if(i-1 in dets.keys()):
-            bboxes = dets[i-1]
-            # Get bndbxs for each detection
-            for i, bbox in enumerate(bboxes):
-                ape_id = bbox[0]
-                
-                bbox = normalised_xyxy_to_xyxy(bbox[1])
-                bbox = list(map(float, bbox))
-                xmin, ymin, xmax, ymax = bbox
-                 
-                cv2.rectangle(img, (int(xmin), int(ymin)), (int(xmax), int(ymax)), colours[ape_id], 2)
-                cv2.putText(img, f"ape: {ape_id}", (int(xmin), int(ymin)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colours[ape_id], 2)
-                
-        img_array.append(img)
-
-    out = cv2.VideoWriter(
-        f"{video}.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 24, size
-    )
-
-    for i in range(len(img_array)):
-        out.write(img_array[i])
-    out.release()
-
 
 def parse_args():
 
     parser = argparse.ArgumentParser(description='Training')
-    parser.add_argument('--detection_path',type=str, help='path to pickled detection files')
-    parser.add_argument('--video_path', type=str, help='path to videos to track')
-    parser.add_argument('--confidence', type=float, 
-            help='confidence threshold for detections')
-    parser.add_argument('--distance_matrix', type=str, 
-            help='specify which distance matric to use (i.e. euclidean or iou)')
+    parser.add_argument('--detection_path',type=str, 
+            help='path to pickled detection files')
+    parser.add_argument('--video_path', type=str, 
+            help='path to videos to track')
+    parser.add_argument('--l_confidence', type=float, 
+            help='lower confidence threshold for detections')
+    parser.add_argument('--h_confidence', type=float, 
+            help='higher confidence threshold for detections')
     parser.add_argument('--length', type=int,
             help='tracklets less than this will be discarded')
-    parser.add_argument('--write', type=int, help='Write to video (i.e. True)')
+    parser.add_argument('--outpath', type=str,
+            help='specify path to write results to')
     args = parser.parse_args()
     return args
     
@@ -505,18 +303,15 @@ def main():
         video_detections = nms2frames(video_detections, 0.5) 
         video_detections = mot2frames(video_detections)
          
-        tracklets = track_iou(video_detections, 0.25, 0.75, 0.75, 24)
-        confidence = get_confidences(video_detections, args.confidence)
+        tracklets = track_iou(video_detections, args.l_confidence, args.h_confidence, 0.75, args.length)
+        confidence = get_confidences(video_detections, args.l_confidence)
         
         id_tracklets = id2_tracklets(tracklets=tracklets, length_thresh=args.length)
          
         # process_tracklets
         final = process_tracklets(id_tracklets, confidence, video)
         
-        if(args.write):
-            stitch_to_video(video=video, dets=id_tracklets)
-        
-        outfile = f"tracks/{video.split('/')[-1].split('.mp4')[0]}.pkl"
+        outfile = f"{args.outpath}/{video.split('/')[-1].split('.mp4')[0]}_track.pkl"
         
         with open(outfile, 'wb') as handle:
             pickle.dump(final, handle, protocol=pickle.HIGHEST_PROTOCOL)
